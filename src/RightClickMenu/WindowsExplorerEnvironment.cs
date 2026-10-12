@@ -10,9 +10,12 @@ namespace RightClickMenu;
 public sealed class WindowsExplorerEnvironment : IExplorerEnvironment
 {
     private readonly string currentUserSid;
+    private readonly int currentSessionId;
 
     public WindowsExplorerEnvironment()
     {
+        using var currentProcess = Process.GetCurrentProcess();
+        currentSessionId = currentProcess.SessionId;
         using var identity = WindowsIdentity.GetCurrent();
         currentUserSid = identity.User?.Value
             ?? throw new InvalidOperationException("ไม่สามารถระบุผู้ใช้ปัจจุบันได้");
@@ -26,7 +29,7 @@ public sealed class WindowsExplorerEnvironment : IExplorerEnvironment
             using (process)
             using (var handle = OpenProcess(0x1000, false, process.Id)) // QUERY_LIMITED_INFORMATION
             {
-                if (!handle.IsInvalid && IsCurrentUser(handle))
+                if (!handle.IsInvalid && process.SessionId == currentSessionId && IsCurrentUser(handle))
                     ids.Add(process.Id);
             }
         }
@@ -50,6 +53,7 @@ public sealed class WindowsExplorerEnvironment : IExplorerEnvironment
                 if (!QueryFullProcessImageName(handle, 0, imagePath, ref length))
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 if (!string.Equals(Path.GetFileName(imagePath.ToString()), "explorer.exe", StringComparison.OrdinalIgnoreCase)
+                    || process.SessionId != currentSessionId
                     || !IsCurrentUser(handle))
                     return;
                 process.Kill();

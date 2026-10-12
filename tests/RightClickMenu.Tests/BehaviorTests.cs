@@ -15,7 +15,7 @@ public sealed class BehaviorTests
         var dialogs = new FakeDialogs();
         await new StyleController(runner, restarter, dialogs).ApplyAsync(style);
         Assert.NotNull(runner.Command);
-        Assert.Equal("reg.exe", runner.Command.FileName);
+        Assert.Equal(Path.Combine(Environment.SystemDirectory, "reg.exe"), runner.Command.FileName);
         Assert.Equal(arguments, runner.Command.Arguments);
         Assert.False(runner.Command.UseShellExecute);
         Assert.True(runner.Command.CreateNoWindow);
@@ -109,6 +109,35 @@ public sealed class BehaviorTests
         Assert.Empty(environment.Delays);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KillWaitTimeoutRecoversShellBeforeReportingThaiError(bool respawn)
+    {
+        var environment = new FakeExplorerEnvironment { KillTimeout = true, Respawn = respawn };
+        var dialogs = new FakeDialogs { Restart = true };
+        await new StyleController(new FakeRunner(), new ExplorerRestarter(environment), dialogs)
+            .ApplyAsync(MenuStyle.Windows10);
+        Assert.Equal(new[] { 10, 20 }, environment.Killed);
+        Assert.Equal(respawn ? 0 : 1, environment.Starts);
+        Assert.True(environment.GetCurrentUserExplorerIds().Count > 0);
+        var error = Assert.Single(dialogs.Errors);
+        Assert.Contains("หมดเวลารอ Explorer ปิด", error);
+        Assert.DoesNotContain("A task was canceled", error);
+    }
+
+    [Fact]
+    public async Task KillWaitTimeoutAndFailedRecoveryReportsThaiRecoveryError()
+    {
+        var environment = new FakeExplorerEnvironment { KillTimeout = true, StartFails = true };
+        var dialogs = new FakeDialogs { Restart = true };
+        await new StyleController(new FakeRunner(), new ExplorerRestarter(environment), dialogs)
+            .ApplyAsync(MenuStyle.Windows10);
+        Assert.Equal(1, environment.Starts);
+        Assert.Contains("Explorer ยังไม่ทำงาน", Assert.Single(dialogs.Errors));
+        Assert.DoesNotContain("A task was canceled", dialogs.Errors[0]);
+    }
+
     [Fact]
     public async Task ExplorerThatFailsToStartIsReportedAfterBoundedWait()
     {
@@ -157,6 +186,7 @@ public sealed class BehaviorTests
         private int reads;
         public bool Respawn { get; init; }
         public bool KillFailure { get; init; }
+        public bool KillTimeout { get; init; }
         public bool StartFails { get; init; }
         public List<int> Killed { get; } = [];
         public List<TimeSpan> Delays { get; } = [];
@@ -168,6 +198,7 @@ public sealed class BehaviorTests
         {
             Killed.Add(processId);
             Events.Add($"kill {processId}");
+            if (KillTimeout) return Task.FromException(new TaskCanceledException());
             return KillFailure ? Task.FromException(new InvalidOperationException("kill failed")) : Task.CompletedTask;
         }
         public Task DelayAsync(TimeSpan delay)

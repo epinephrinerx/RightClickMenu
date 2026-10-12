@@ -5,11 +5,17 @@ public sealed class MainForm : Form, IStyleDialogs
     private readonly StyleController controller;
     private readonly Button windows10Button;
     private readonly Button windows11Button;
+    private readonly Func<IWin32Window, DialogResult> showRestartPrompt;
+    private readonly Action<string>? showError;
+    private bool busy;
 
     public MainForm() : this(new ProcessRunner(), new ExplorerRestarter(new WindowsExplorerEnvironment())) { }
 
-    public MainForm(IProcessRunner runner, IExplorerRestarter restarter)
+    public MainForm(IProcessRunner runner, IExplorerRestarter restarter,
+        Func<IWin32Window, DialogResult>? showRestartPrompt = null, Action<string>? showError = null)
     {
+        this.showRestartPrompt = showRestartPrompt ?? ShowRestartPrompt;
+        this.showError = showError;
         Text = "Right Click Menu";
         ClientSize = new Size(420, 150);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -34,17 +40,34 @@ public sealed class MainForm : Form, IStyleDialogs
 
     private async Task ApplyAsync(MenuStyle style)
     {
+        if (busy) return;
+        busy = true;
         windows10Button.Enabled = windows11Button.Enabled = false;
         try { await controller.ApplyAsync(style); }
-        finally { windows10Button.Enabled = windows11Button.Enabled = true; }
+        finally
+        {
+            busy = false;
+            windows10Button.Enabled = windows11Button.Enabled = true;
+        }
     }
 
-    public bool ConfirmExplorerRestart()
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        base.OnFormClosing(e);
+        if (busy) e.Cancel = true;
+    }
+
+    public bool ConfirmExplorerRestart() => showRestartPrompt(this) == DialogResult.OK;
+
+    private static DialogResult ShowRestartPrompt(IWin32Window owner)
     {
         using var prompt = new RestartPromptForm();
-        return prompt.ShowDialog(this) == DialogResult.OK;
+        return prompt.ShowDialog(owner);
     }
 
-    public void ShowError(string message) =>
-        MessageBox.Show(this, message, "ข้อผิดพลาด", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    public void ShowError(string message)
+    {
+        if (showError is not null) showError(message);
+        else MessageBox.Show(this, message, "ข้อผิดพลาด", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
 }
