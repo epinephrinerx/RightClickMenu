@@ -16,7 +16,7 @@
 - Package manager: `NuGet`
 - Coding Owner : `Claude Code`
 - Writing Owner : `Codex`
-- Writing Model : `GPT-5.5 Codex`
+- Writing Model : `gpt-6.1-sol`
 - Writing Effort : `medium`
 - Reviewer1 Model : `claude-opus-5-5` ต้องไม่ซ้ำกับ writing model หรือ Reviewer 2 model
 - Reviewer1 EFfort : `medium`
